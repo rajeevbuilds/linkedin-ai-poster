@@ -1,0 +1,32 @@
+# --- Secrets / credentials: NEVER commit these ---
+.env
+.env.*
+!.env.example
+*.token
+*.key
+credentials.json
+token.json
+linkedin_token.json
+secrets/
+
+# --- Data / logs generated at runtime ---
+data/
+logs/
+*.log
+posted_history.json
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
