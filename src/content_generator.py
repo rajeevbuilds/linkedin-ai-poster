@@ -5,10 +5,14 @@ If ANTHROPIC_API_KEY is set, asks Claude to write a short, punchy post.
 Otherwise falls back to a simple template so the app still works with zero
 extra API keys.
 """
+import json
+import os
 import random
 
 from src import config
 from src.topic_fetcher import Topic
+
+LAST_CHOICES_FILE = "data/last_template_choices.json"  # git-ignored
 
 SYSTEM_PROMPT = (
     "You write short, engaging LinkedIn posts about AI news for a technical "
@@ -36,6 +40,9 @@ ATTENTION_PHRASES = [
     "This popped up on my radar today",
     "Seeing this get shared a lot today",
     "This is trending in AI discussions today",
+    "This is picking up traction today",
+    "There's some real discussion happening around this",
+    "This one's sparking conversation today",
 ]
 
 CLOSING_QUESTIONS = [
@@ -54,18 +61,53 @@ HASHTAG_SETS = [
 ]
 
 
+def _load_last_choices() -> dict:
+    if not os.path.exists(LAST_CHOICES_FILE):
+        return {}
+    try:
+        with open(LAST_CHOICES_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_last_choices(choices: dict) -> None:
+    os.makedirs("data", exist_ok=True)
+    with open(LAST_CHOICES_FILE, "w") as f:
+        json.dump(choices, f, indent=2)
+
+
+def _choose_excluding(options: list, last_used):
+    remaining = [o for o in options if o != last_used]
+    return random.choice(remaining or options)
+
+
 def _template_post(topic: Topic) -> str:
+    last = _load_last_choices()
+
+    opener = _choose_excluding(OPENERS, last.get("opener"))
+    attention_phrase = _choose_excluding(ATTENTION_PHRASES, last.get("attention_phrase"))
+    closing_question = _choose_excluding(CLOSING_QUESTIONS, last.get("closing_question"))
+    hashtag_set = _choose_excluding(HASHTAG_SETS, last.get("hashtag_set"))
+
+    _save_last_choices({
+        "opener": opener,
+        "attention_phrase": attention_phrase,
+        "closing_question": closing_question,
+        "hashtag_set": hashtag_set,
+    })
+
     attention_detail = (
         f"({topic.points} upvotes on {topic.source})"
         if topic.source == "Hacker News"
         else f"(via {topic.source})"
     )
     return (
-        f"{random.choice(OPENERS)} {topic.title}\n\n"
-        f"{random.choice(ATTENTION_PHRASES)} {attention_detail}.\n\n"
+        f"{opener} {topic.title}\n\n"
+        f"{attention_phrase} {attention_detail}.\n\n"
         f"Read more: {topic.url}\n\n"
-        f"{random.choice(CLOSING_QUESTIONS)}\n\n"
-        f"{random.choice(HASHTAG_SETS)}"
+        f"{closing_question}\n\n"
+        f"{hashtag_set}"
     )
 
 
