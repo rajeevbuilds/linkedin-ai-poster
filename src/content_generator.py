@@ -18,10 +18,15 @@ SYSTEM_PROMPT = (
 
 
 def _template_post(topic: Topic) -> str:
+    attention = (
+        f"({topic.points} upvotes on {topic.source})"
+        if topic.source == "Hacker News"
+        else f"(via {topic.source})"
+    )
     return (
         f"🤖 Worth a look: {topic.title}\n\n"
         f"This has been getting attention in the AI community today "
-        f"({topic.points} upvotes on {topic.source}).\n\n"
+        f"{attention}.\n\n"
         f"Read more: {topic.url}\n\n"
         f"What's your take on this?\n\n"
         f"#AI #MachineLearning #TechNews #Innovation"

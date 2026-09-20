@@ -1,10 +1,11 @@
 """
 Pulls currently "hot" AI stories to turn into a LinkedIn post.
 
-Source: Hacker News (via the free, keyless Algolia HN Search API), filtered
-to AI-related keywords and sorted by points. Swap this out or add more
-sources (arXiv, a company blog's RSS feed, etc.) without touching anything
-else in the app — it just needs to return a list of Topic objects.
+Sources: Hacker News (via the free, keyless Algolia HN Search API), plus
+optional GNews and NewsAPI searches, all filtered to AI-related keywords.
+Swap this out or add more sources (arXiv, a company blog's RSS feed, etc.)
+without touching anything else in the app — each fetcher just needs to
+return a list of Topic objects.
 """
 import re
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from typing import List
 
 import requests
 
+from src import config
+
 AI_KEYWORDS = [
     "ai", "artificial intelligence", "llm", "large language model", "gpt",
     "claude", "gemini", "openai", "anthropic", "machine learning",
@@ -20,6 +23,11 @@ AI_KEYWORDS = [
 ]
 
 HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
+GNEWS_SEARCH_URL = "https://gnews.io/api/v4/search"
+NEWSAPI_SEARCH_URL = "https://newsapi.org/v2/everything"
+
+GNEWS_QUERY = "artificial intelligence"
+NEWSAPI_QUERY = "artificial intelligence"
 
 
 @dataclass
@@ -59,6 +67,105 @@ def fetch_hot_ai_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]
     return candidates[:limit]
 
 
+def fetch_gnews_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
+    """Best-effort. Returns [] if GNEWS_API_KEY isn't set or the request fails."""
+    if not config.GNEWS_API_KEY:
+        return []
+
+    since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+    params = {
+        "q": GNEWS_QUERY,
+        "lang": "en",
+        "from": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "sortby": "publishedAt",
+        "max": 10,  # free-tier cap
+        "apikey": config.GNEWS_API_KEY,
+    }
+    try:
+        resp = requests.get(GNEWS_SEARCH_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        articles = resp.json().get("articles", [])
+    except Exception as exc:
+        print(f"[topic_fetcher] GNews fetch failed ({exc}); skipping this source.")
+        return []
+
+    # GNews doesn't expose an engagement/vote count, so we assign a
+    # descending synthetic rank (by result order) purely to sort candidates
+    # from this source relative to each other. It is not a real popularity
+    # signal like Hacker News points, and Hacker News stays the trusted
+    # baseline for that reason.
+    candidates = [
+        Topic(title=a["title"], url=a["url"], points=max(1, 100 - i), source="GNews")
+        for i, a in enumerate(articles)
+        if a.get("title") and a.get("url") and _is_ai_related(a["title"])
+    ]
+    return candidates[:limit]
+
+
+def fetch_newsapi_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
+    """Best-effort. Returns [] if NEWSAPI_API_KEY isn't set or the request fails."""
+    if not config.NEWSAPI_API_KEY:
+        return []
+
+    since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+    params = {
+        "q": NEWSAPI_QUERY,
+        "language": "en",
+        "from": since.strftime("%Y-%m-%dT%H:%M:%S"),
+        "sortBy": "popularity",
+        "pageSize": 20,
+        "apiKey": config.NEWSAPI_API_KEY,
+    }
+    try:
+        resp = requests.get(NEWSAPI_SEARCH_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        articles = resp.json().get("articles", [])
+    except Exception as exc:
+        print(f"[topic_fetcher] NewsAPI fetch failed ({exc}); skipping this source.")
+        return []
+
+    # Same caveat as GNews above: synthetic rank, not a real engagement metric.
+    candidates = [
+        Topic(title=a["title"], url=a["url"], points=max(1, 100 - i), source="NewsAPI")
+        for i, a in enumerate(articles)
+        if a.get("title") and a.get("url") and _is_ai_related(a["title"])
+    ]
+    return candidates[:limit]
+
+
+def fetch_all_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
+    """
+    Health-check / fallback order:
+      1. Hacker News  — always tried, always trusted (real upvote counts).
+      2. GNews        — optional, best-effort; skipped if no API key or on failure.
+      3. NewsAPI      — optional, best-effort; skipped if no API key or on failure.
+      4. If steps 1-3 combined return nothing usable, retry Hacker News alone
+         with a doubled lookback window as a last resort.
+      5. If even that returns nothing, return an empty list (main.py already
+         handles this case with "No fresh AI topics found").
+    """
+    hn_topics = fetch_hot_ai_topics(lookback_hours=lookback_hours, limit=limit)
+    gnews_topics = fetch_gnews_topics(lookback_hours=lookback_hours, limit=limit)
+    newsapi_topics = fetch_newsapi_topics(lookback_hours=lookback_hours, limit=limit)
+
+    combined: List[Topic] = []
+    seen_urls = set()
+    for topic in hn_topics + gnews_topics + newsapi_topics:
+        if topic.url not in seen_urls:
+            seen_urls.add(topic.url)
+            combined.append(topic)
+
+    if not combined:
+        print(
+            "[topic_fetcher] GNews/NewsAPI returned nothing usable — "
+            "falling back to Hacker News only."
+        )
+        return fetch_hot_ai_topics(lookback_hours=lookback_hours * 2, limit=limit)
+
+    combined.sort(key=lambda t: t.points, reverse=True)
+    return combined[:limit]
+
+
 if __name__ == "__main__":
-    for topic in fetch_hot_ai_topics():
-        print(f"[{topic.points} pts] {topic.title} -> {topic.url}")
+    for topic in fetch_all_topics():
+        print(f"[{topic.points} pts, {topic.source}] {topic.title} -> {topic.url}")

@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timezone
 
 from src import config
-from src.topic_fetcher import fetch_hot_ai_topics
+from src.topic_fetcher import fetch_all_topics
 from src.content_generator import generate_post
 from src.linkedin_client import publish_post
 
@@ -32,7 +32,7 @@ def _save_history(history: set) -> None:
 
 def run():
     history = _load_history()
-    topics = fetch_hot_ai_topics(lookback_hours=config.TOPIC_LOOKBACK_HOURS, limit=10)
+    topics = fetch_all_topics(lookback_hours=config.TOPIC_LOOKBACK_HOURS, limit=10)
     fresh = [t for t in topics if t.url not in history]
 
     if not fresh:
