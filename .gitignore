@@ -10,10 +10,10 @@ linkedin_token.json
 secrets/
 
 # --- Data / logs generated at runtime ---
-data/
+data/*
+!data/posted_history.json
 logs/
 *.log
-posted_history.json
 
 # --- Python ---
 __pycache__/

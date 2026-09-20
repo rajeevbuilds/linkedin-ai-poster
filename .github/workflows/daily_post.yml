@@ -9,6 +9,8 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -25,3 +27,12 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DRY_RUN: "false"
         run: python main.py
+
+      - name: Commit updated post history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/posted_history.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Update posted history [skip ci]"
+          git push

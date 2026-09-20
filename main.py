@@ -14,7 +14,7 @@ from src.topic_fetcher import fetch_hot_ai_topics
 from src.content_generator import generate_post
 from src.linkedin_client import publish_post
 
-HISTORY_FILE = "data/posted_history.json"  # git-ignored
+HISTORY_FILE = "data/posted_history.json"
 
 
 def _load_history() -> set:
