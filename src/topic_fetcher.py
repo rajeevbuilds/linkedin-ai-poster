@@ -22,12 +22,20 @@ AI_KEYWORDS = [
     "neural network", "deep learning", "agent", "chatbot", "genai",
 ]
 
+# Political/policy stories often mention "AI" in passing (regulation,
+# funding, government adoption) without being technical AI content. This
+# list may need occasional tuning as new political/AI-policy terms emerge.
+EXCLUDE_KEYWORDS = [
+    "president", "senate", "congress", "election", "czar", "regulation",
+    "lawsuit", "administration", "white house", "policy", "legislation",
+    "government shutdown", "impeach",
+]
+
 HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 GNEWS_SEARCH_URL = "https://gnews.io/api/v4/search"
-NEWSAPI_SEARCH_URL = "https://newsapi.org/v2/everything"
+NEWSAPI_TOP_HEADLINES_URL = "https://newsapi.org/v2/top-headlines"
 
 GNEWS_QUERY = "artificial intelligence"
-NEWSAPI_QUERY = "artificial intelligence"
 
 
 @dataclass
@@ -41,6 +49,11 @@ class Topic:
 def _is_ai_related(title: str) -> bool:
     t = title.lower()
     return any(re.search(rf'\b{re.escape(keyword)}\b', t) for keyword in AI_KEYWORDS)
+
+
+def _is_political(title: str) -> bool:
+    t = title.lower()
+    return any(re.search(rf'\b{re.escape(keyword)}\b', t) for keyword in EXCLUDE_KEYWORDS)
 
 
 def fetch_hot_ai_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
@@ -79,6 +92,7 @@ def fetch_gnews_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
         "from": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "sortby": "publishedAt",
         "max": 10,  # free-tier cap
+        "category": "technology",
         "apikey": config.GNEWS_API_KEY,
     }
     try:
@@ -103,21 +117,24 @@ def fetch_gnews_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
 
 
 def fetch_newsapi_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
-    """Best-effort. Returns [] if NEWSAPI_API_KEY isn't set or the request fails."""
+    """Best-effort. Returns [] if NEWSAPI_API_KEY isn't set or the request fails.
+
+    Uses /v2/top-headlines (category=technology&country=us) rather than
+    /v2/everything, so results are restricted to NewsAPI's own technology
+    category instead of a broad keyword search. Note: top-headlines doesn't
+    support date-range filtering, so lookback_hours isn't applied here.
+    """
     if not config.NEWSAPI_API_KEY:
         return []
 
-    since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
     params = {
-        "q": NEWSAPI_QUERY,
-        "language": "en",
-        "from": since.strftime("%Y-%m-%dT%H:%M:%S"),
-        "sortBy": "popularity",
+        "category": "technology",
+        "country": "us",
         "pageSize": 20,
         "apiKey": config.NEWSAPI_API_KEY,
     }
     try:
-        resp = requests.get(NEWSAPI_SEARCH_URL, params=params, timeout=15)
+        resp = requests.get(NEWSAPI_TOP_HEADLINES_URL, params=params, timeout=15)
         resp.raise_for_status()
         articles = resp.json().get("articles", [])
     except Exception as exc:
@@ -131,6 +148,16 @@ def fetch_newsapi_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic
         if a.get("title") and a.get("url") and _is_ai_related(a["title"])
     ]
     return candidates[:limit]
+
+
+def _filter_political(topics: List[Topic]) -> List[Topic]:
+    kept = []
+    for topic in topics:
+        if _is_political(topic.title):
+            print(f"[topic_fetcher] Skipped (political/policy content): {topic.title}")
+        else:
+            kept.append(topic)
+    return kept
 
 
 def fetch_all_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
@@ -155,12 +182,15 @@ def fetch_all_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
             seen_urls.add(topic.url)
             combined.append(topic)
 
+    combined = _filter_political(combined)
+
     if not combined:
         print(
             "[topic_fetcher] GNews/NewsAPI returned nothing usable — "
             "falling back to Hacker News only."
         )
-        return fetch_hot_ai_topics(lookback_hours=lookback_hours * 2, limit=limit)
+        fallback = fetch_hot_ai_topics(lookback_hours=lookback_hours * 2, limit=limit)
+        return _filter_political(fallback)
 
     combined.sort(key=lambda t: t.points, reverse=True)
     return combined[:limit]
