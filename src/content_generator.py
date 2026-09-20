@@ -5,6 +5,8 @@ If ANTHROPIC_API_KEY is set, asks Claude to write a short, punchy post.
 Otherwise falls back to a simple template so the app still works with zero
 extra API keys.
 """
+import random
+
 from src import config
 from src.topic_fetcher import Topic
 
@@ -16,20 +18,54 @@ SYSTEM_PROMPT = (
     "Never fabricate facts beyond what's given."
 )
 
+OPENERS = [
+    "🤖 Worth a look:",
+    "💡 Just came across this:",
+    "🔍 Interesting one today:",
+    "📌 Flagging this:",
+    "🚀 This caught my eye:",
+    "⚡ Quick share:",
+    "🧠 Been thinking about this:",
+    "👀 Take a look at this:",
+]
+
+ATTENTION_PHRASES = [
+    "This has been generating buzz in the AI community today",
+    "This is making the rounds in AI circles right now",
+    "People in tech are talking about this today",
+    "This popped up on my radar today",
+    "Seeing this get shared a lot today",
+    "This is trending in AI discussions today",
+]
+
+CLOSING_QUESTIONS = [
+    "What's your take on this?",
+    "Curious what others think here.",
+    "Where do you land on this?",
+    "Thoughts?",
+    "Does this change anything for you?",
+    "How are you thinking about this?",
+]
+
+HASHTAG_SETS = [
+    "#AI #MachineLearning #TechNews #Innovation",
+    "#ArtificialIntelligence #AI #TechTrends #FutureOfWork",
+    "#AI #MachineLearning #Tech #Innovation #AINews",
+]
+
 
 def _template_post(topic: Topic) -> str:
-    attention = (
+    attention_detail = (
         f"({topic.points} upvotes on {topic.source})"
         if topic.source == "Hacker News"
         else f"(via {topic.source})"
     )
     return (
-        f"🤖 Worth a look: {topic.title}\n\n"
-        f"This has been getting attention in the AI community today "
-        f"{attention}.\n\n"
+        f"{random.choice(OPENERS)} {topic.title}\n\n"
+        f"{random.choice(ATTENTION_PHRASES)} {attention_detail}.\n\n"
         f"Read more: {topic.url}\n\n"
-        f"What's your take on this?\n\n"
-        f"#AI #MachineLearning #TechNews #Innovation"
+        f"{random.choice(CLOSING_QUESTIONS)}\n\n"
+        f"{random.choice(HASHTAG_SETS)}"
     )
 
 

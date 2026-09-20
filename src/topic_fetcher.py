@@ -23,13 +23,24 @@ AI_KEYWORDS = [
 ]
 
 # Political/policy stories often mention "AI" in passing (regulation,
-# funding, government adoption) without being technical AI content. This
-# list may need occasional tuning as new political/AI-policy terms emerge.
+# funding, government adoption) without being technical AI content.
+# Named-politician filtering here will never be fully complete — new names
+# and terms surface constantly, so this list needs occasional tuning. The
+# POLITICAL_TITLE_PATTERN regex below (matching "President X", "Senator X",
+# etc.) is the more durable defense against names we haven't listed; this
+# keyword list is just a fast-path for common recurring terms, not the
+# primary safeguard.
 EXCLUDE_KEYWORDS = [
     "president", "senate", "congress", "election", "czar", "regulation",
     "lawsuit", "administration", "white house", "policy", "legislation",
-    "government shutdown", "impeach",
+    "government shutdown", "impeach", "trump", "biden", "adviser", "advisor",
+    "executive order", "secretary of state", "prime minister", "parliament",
+    "eu commission", "sanctions", "geopolitics",
 ]
+
+POLITICAL_TITLE_PATTERN = re.compile(
+    r'\b(President|Senator|Secretary|Minister|Governor|Mayor|Chancellor)\s+[A-Z][a-z]+'
+)
 
 HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 GNEWS_SEARCH_URL = "https://gnews.io/api/v4/search"
@@ -53,7 +64,9 @@ def _is_ai_related(title: str) -> bool:
 
 def _is_political(title: str) -> bool:
     t = title.lower()
-    return any(re.search(rf'\b{re.escape(keyword)}\b', t) for keyword in EXCLUDE_KEYWORDS)
+    if any(re.search(rf'\b{re.escape(keyword)}\b', t) for keyword in EXCLUDE_KEYWORDS):
+        return True
+    return bool(POLITICAL_TITLE_PATTERN.search(title))
 
 
 def fetch_hot_ai_topics(lookback_hours: int = 24, limit: int = 5) -> List[Topic]:
